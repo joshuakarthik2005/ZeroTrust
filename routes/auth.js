@@ -114,7 +114,7 @@ router.post('/enable-mfa', async (req, res) => {
         });
     } catch (error) {
         console.error('Enable MFA error:', error);
-        res.status(500).json({ error: 'Failed to enable MFA' });
+        res.status(500).json({ error: 'Failed to enable MFA: ' + error.message });
     }
 });
 
@@ -194,9 +194,11 @@ router.post('/verify-mfa', async (req, res) => {
             { expiresIn: '24h' }
         );
 
-        // Store session
-        req.session.userId = user._id.toString();
-        req.session.authenticated = true;
+        // Store session (only if session exists - may not in serverless)
+        if (req.session) {
+            req.session.userId = user._id.toString();
+            req.session.authenticated = true;
+        }
 
         res.json({
             message: 'Login successful',
@@ -211,7 +213,7 @@ router.post('/verify-mfa', async (req, res) => {
         });
     } catch (error) {
         console.error('MFA verification error:', error);
-        res.status(500).json({ error: 'MFA verification failed' });
+        res.status(500).json({ error: 'MFA verification failed: ' + error.message });
     }
 });
 
