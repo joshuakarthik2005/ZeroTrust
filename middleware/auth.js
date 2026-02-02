@@ -142,14 +142,20 @@ function checkDocumentPermission(permission) {
             return next();
         }
 
-        // Check ACL
-        if (!documentACL.hasPermission(documentId, userId, permission)) {
-            return res.status(403).json({ 
-                error: `You don't have ${permission} permission for this document` 
-            });
+        // Check MongoDB permissions array first (for serverless persistence)
+        const docPermission = document.permissions.find(p => p.userId.toString() === userId);
+        if (docPermission && docPermission.permissions.includes(permission)) {
+            return next();
         }
 
-        next();
+        // Also check in-memory ACL (backward compatibility)
+        if (documentACL.hasPermission(documentId, userId, permission)) {
+            return next();
+        }
+
+        return res.status(403).json({ 
+            error: `You don't have ${permission} permission for this document` 
+        });
     };
 }
 

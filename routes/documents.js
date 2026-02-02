@@ -97,12 +97,20 @@ router.get('/', authenticateToken, async (req, res) => {
         for (let doc of allDocuments) {
             const docId = doc._id.toString();
             const isOwner = doc.ownerId.toString() === userId;
-            const hasAccess = documentACL.hasPermission(docId, userId, 'read');
             
-            console.log(`Document ${docId}: Owner=${isOwner}, HasAccess=${hasAccess}`);
+            // Check MongoDB permissions array (for serverless persistence)
+            const docPermission = doc.permissions.find(p => p.userId.toString() === userId);
+            const hasAccessFromDB = docPermission && docPermission.permissions.includes('read');
+            
+            // Also check in-memory ACL (for backward compatibility)
+            const hasAccessFromACL = documentACL.hasPermission(docId, userId, 'read');
+            const hasAccess = hasAccessFromDB || hasAccessFromACL;
+            
+            console.log(`Document ${docId}: Owner=${isOwner}, HasAccessDB=${hasAccessFromDB}, HasAccessACL=${hasAccessFromACL}`);
             
             // Check if user owns or has access
             if (isOwner || hasAccess) {
+                const userPerms = docPermission ? docPermission.permissions : (isOwner ? ['read', 'write', 'delete', 'share', 'sign'] : []);
                 accessibleDocs.push({
                     id: docId,
                     title: doc.title,
@@ -110,7 +118,7 @@ router.get('/', authenticateToken, async (req, res) => {
                     signatureCount: doc.signatures.length,
                     createdAt: doc.createdAt,
                     updatedAt: doc.updatedAt,
-                    permissions: documentACL.getPermissions(docId, userId),
+                    permissions: userPerms,
                     isShared: !isOwner
                 });
             }
