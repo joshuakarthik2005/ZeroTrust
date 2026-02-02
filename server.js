@@ -13,20 +13,36 @@ const inviteRoutes = require('./routes/invites');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/zero-trust-workspace')
-.then(() => console.log('✅ Connected to MongoDB'))
-.catch(err => {
-    console.error('❌ MongoDB connection error:', err.message);
-    console.log('⚠️  Running without database - data will not persist');
-});
+// MongoDB connection caching for serverless
+let isConnected = false;
+
+const connectDB = async () => {
+    if (isConnected) {
+        console.log('Using existing MongoDB connection');
+        return;
+    }
+
+    try {
+        const db = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/zero-trust-workspace', {
+            bufferCommands: false,
+        });
+        isConnected = db.connections[0].readyState === 1;
+        console.log('✅ Connected to MongoDB');
+    } catch (err) {
+        console.error('❌ MongoDB connection error:', err.message);
+        throw err;
+    }
+};
+
+// Connect to MongoDB before handling requests
+connectDB();
 
 // Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(session({
-    secret: process.env.SESSION_SECRET,
+    secret: process.env.SESSION_SECRET || 'fallback-secret-key',
     resave: false,
     saveUninitialized: false,
     cookie: { 
@@ -35,6 +51,16 @@ app.use(session({
         maxAge: 3600000 // 1 hour
     }
 }));
+
+// Ensure MongoDB connection before API requests
+app.use('/api', async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (err) {
+        res.status(500).json({ error: 'Database connection failed' });
+    }
+});
 
 // Static files
 app.use(express.static('public'));
