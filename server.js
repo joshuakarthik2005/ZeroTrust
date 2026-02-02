@@ -14,28 +14,38 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // MongoDB connection caching for serverless
-let isConnected = false;
+let cached = global.mongoose;
+
+if (!cached) {
+    cached = global.mongoose = { conn: null, promise: null };
+}
 
 const connectDB = async () => {
-    if (isConnected) {
-        console.log('Using existing MongoDB connection');
-        return;
+    if (cached.conn) {
+        return cached.conn;
+    }
+
+    if (!cached.promise) {
+        const opts = {
+            bufferCommands: true, // Enable buffering
+        };
+
+        cached.promise = mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/zero-trust-workspace', opts)
+            .then((mongoose) => {
+                console.log('✅ Connected to MongoDB');
+                return mongoose;
+            });
     }
 
     try {
-        const db = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/zero-trust-workspace', {
-            bufferCommands: false,
-        });
-        isConnected = db.connections[0].readyState === 1;
-        console.log('✅ Connected to MongoDB');
-    } catch (err) {
-        console.error('❌ MongoDB connection error:', err.message);
-        throw err;
+        cached.conn = await cached.promise;
+    } catch (e) {
+        cached.promise = null;
+        throw e;
     }
-};
 
-// Connect to MongoDB before handling requests
-connectDB();
+    return cached.conn;
+};
 
 // Middleware
 app.use(bodyParser.json());
