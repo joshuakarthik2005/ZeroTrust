@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero-Trust Secure Collaboration Workspace</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Login/Register Screen -->
+        <div id="auth-screen" class="screen active">
+            <div class="auth-container">
+                <div class="logo">
+                    <h1>🔒 Zero-Trust Workspace</h1>
+                    <p>Secure Collaboration Platform</p>
+                </div>
+
+                <div class="auth-tabs">
+                    <button class="tab-btn active" onclick="showTab('login')">Login</button>
+                    <button class="tab-btn" onclick="showTab('register')">Register</button>
+                </div>
+
+                <!-- Login Form -->
+                <div id="login-tab" class="tab-content active">
+                    <form id="login-form">
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="login-email" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="login-password" required>
+                        </div>
+                        <button type="submit" class="btn-primary">Login</button>
+                    </form>
+
+                    <!-- MFA Verification -->
+                    <div id="mfa-verification" style="display: none;">
+                        <h3>🔐 MFA Verification Required</h3>
+                        <div class="form-group">
+                            <label>Enter OTP Code</label>
+                            <input type="text" id="mfa-token" maxlength="6" pattern="[0-9]{6}">
+                        </div>
+                        <button onclick="verifyMFA()" class="btn-primary">Verify</button>
+                        <button onclick="cancelMFA()" class="btn-secondary">Cancel</button>
+                    </div>
+                </div>
+
+                <!-- Register Form -->
+                <div id="register-tab" class="tab-content">
+                    <form id="register-form">
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="reg-username" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="reg-email" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Password (min 8 characters)</label>
+                            <input type="password" id="reg-password" required minlength="8">
+                        </div>
+                        <button type="submit" class="btn-primary">Register</button>
+                    </form>
+
+                    <!-- MFA Setup -->
+                    <div id="mfa-setup" style="display: none;">
+                        <h3>📱 Setup Multi-Factor Authentication</h3>
+                        <p>Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)</p>
+                        <div id="qr-code-container"></div>
+                        <div class="form-group">
+                            <label>Enter code from app to verify</label>
+                            <input type="text" id="mfa-setup-token" maxlength="6" pattern="[0-9]{6}">
+                        </div>
+                        <button onclick="enableMFA()" class="btn-primary">Enable MFA</button>
+                    </div>
+                </div>
+
+                <div id="auth-message" class="message"></div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div id="dashboard-screen" class="screen">
+            <nav class="navbar">
+                <div class="nav-brand">🔒 Zero-Trust Workspace</div>
+                <div class="nav-user">
+                    <span id="user-info"></span>
+                    <button onclick="logout()" class="btn-secondary">Logout</button>
+                </div>
+            </nav>
+
+            <div class="dashboard-container">
+                <aside class="sidebar">
+                    <button class="nav-item active" onclick="showSection('documents')">
+                        📄 Documents
+                    </button>
+                    <button class="nav-item" onclick="showSection('invites')">
+                        🎫 Invites
+                    </button>
+                    <button class="nav-item" onclick="showSection('settings')">
+                        ⚙️ Settings
+                    </button>
+                </aside>
+
+                <main class="main-content">
+                    <!-- Documents Section -->
+                    <section id="documents-section" class="content-section active">
+                        <div class="section-header">
+                            <h2>Documents</h2>
+                            <button onclick="showCreateDocument()" class="btn-primary">+ Create Document</button>
+                        </div>
+
+                        <div id="documents-list" class="documents-grid"></div>
+
+                        <!-- Create/Edit Document Modal -->
+                        <div id="document-modal" class="modal">
+                            <div class="modal-content">
+                                <span class="close" onclick="closeDocumentModal()">&times;</span>
+                                <h2 id="document-modal-title">Create Document</h2>
+                                <form id="document-form">
+                                    <div class="form-group">
+                                        <label>Title</label>
+                                        <input type="text" id="doc-title" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Content</label>
+                                        <textarea id="doc-content" rows="10" required></textarea>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>
+                                            <input type="checkbox" id="doc-encrypted">
+                                            🔐 Enable end-to-end encryption
+                                        </label>
+                                    </div>
+                                    <button type="submit" class="btn-primary">Save Document</button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- View Document Modal -->
+                        <div id="view-document-modal" class="modal">
+                            <div class="modal-content">
+                                <span class="close" onclick="closeViewDocumentModal()">&times;</span>
+                                <div id="document-view"></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Invites Section -->
+                    <section id="invites-section" class="content-section">
+                        <div class="section-header">
+                            <h2>Invite Tokens</h2>
+                            <button onclick="showCreateInvite()" class="btn-primary">+ Generate Invite</button>
+                        </div>
+
+                        <div id="invites-list"></div>
+
+                        <!-- Create Invite Modal -->
+                        <div id="invite-modal" class="modal">
+                            <div class="modal-content">
+                                <span class="close" onclick="closeInviteModal()">&times;</span>
+                                <h2>Generate Invite Token</h2>
+                                <form id="invite-form">
+                                    <div class="form-group">
+                                        <label>Document (optional)</label>
+                                        <select id="invite-document">
+                                            <option value="">Workspace Only</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Permissions</label>
+                                        <div class="checkbox-group">
+                                            <label><input type="checkbox" name="permissions" value="read" checked> Read</label>
+                                            <label><input type="checkbox" name="permissions" value="write"> Write</label>
+                                            <label><input type="checkbox" name="permissions" value="sign"> Sign</label>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Expires in (minutes, 0 = no expiration)</label>
+                                        <input type="number" id="invite-expires" value="60" min="0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Max uses</label>
+                                        <input type="number" id="invite-max-uses" value="1" min="1">
+                                    </div>
+                                    <button type="submit" class="btn-primary">Generate Invite</button>
+                                </form>
+
+                                <div id="invite-result" style="display: none; margin-top: 20px;">
+                                    <h3>✅ Invite Generated!</h3>
+                                    <div id="invite-qr-code"></div>
+                                    <div class="form-group">
+                                        <label>Invite Token</label>
+                                        <input type="text" id="invite-token-display" readonly>
+                                        <button onclick="copyInviteToken()" class="btn-secondary">Copy Token</button>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Invite URL</label>
+                                        <input type="text" id="invite-url-display" readonly>
+                                        <button onclick="copyInviteUrl()" class="btn-secondary">Copy URL</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Accept Invite Section -->
+                        <div class="accept-invite-section">
+                            <h3>Accept Invite Token</h3>
+                            <div class="form-group">
+                                <input type="text" id="accept-invite-token" placeholder="Paste invite token here">
+                                <button onclick="acceptInvite()" class="btn-primary">Accept Invite</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Settings Section -->
+                    <section id="settings-section" class="content-section">
+                        <h2>Settings</h2>
+                        <div class="settings-container">
+                            <div class="setting-item">
+                                <h3>Security Features</h3>
+                                <ul class="feature-list">
+                                    <li>✅ Multi-Factor Authentication (MFA)</li>
+                                    <li>✅ Role-Based Access Control (ACL)</li>
+                                    <li>✅ End-to-End Encryption (RSA + AES)</li>
+                                    <li>✅ Digital Signatures (SHA-256 + RSA)</li>
+                                    <li>✅ Base64 Encoded Tokens</li>
+                                    <li>✅ QR Code Generation</li>
+                                </ul>
+                            </div>
+                            <div class="setting-item">
+                                <h3>About Zero-Trust</h3>
+                                <p>This platform implements Zero-Trust security principles:</p>
+                                <ul>
+                                    <li><strong>Never Trust, Always Verify:</strong> Every access request is authenticated and authorized</li>
+                                    <li><strong>Least Privilege:</strong> Fine-grained permissions per document</li>
+                                    <li><strong>Assume Breach:</strong> End-to-end encryption protects data</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </section>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

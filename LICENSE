@@ -1,0 +1,45 @@
+MIT License
+
+Copyright (c) 2026 Zero-Trust Collaboration Workspace
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+EDUCATIONAL PURPOSE DISCLAIMER:
+
+This software is provided for educational and demonstration purposes only.
+While it implements industry-standard security algorithms and best practices,
+it should not be used in production environments without:
+
+1. Replacing in-memory storage with a persistent database
+2. Implementing HTTPS/TLS encryption
+3. Adding rate limiting and DDoS protection
+4. Implementing comprehensive logging and monitoring
+5. Conducting security audits and penetration testing
+6. Following OWASP security guidelines
+7. Implementing proper key management with HSM or key vault
+8. Adding backup and disaster recovery mechanisms
+
+The authors and contributors are not responsible for any security incidents,
+data breaches, or other issues arising from the use of this software in
+production environments.
+
+For production use, please consult with security professionals and conduct
+thorough security assessments.
