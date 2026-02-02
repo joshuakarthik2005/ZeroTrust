@@ -167,6 +167,17 @@ router.get('/:id', authenticateToken, checkDocumentPermission('read'), async (re
             }
         }
 
+        // Get user permissions from MongoDB (for serverless)
+        const isOwner = document.ownerId.toString() === userId;
+        let userPermissions = [];
+        
+        if (isOwner) {
+            userPermissions = ['read', 'write', 'delete', 'share', 'sign'];
+        } else {
+            const docPermission = document.permissions.find(p => p.userId.toString() === userId);
+            userPermissions = docPermission ? docPermission.permissions : [];
+        }
+
         res.json({
             id: document._id.toString(),
             title: document.title,
@@ -178,7 +189,7 @@ router.get('/:id', authenticateToken, checkDocumentPermission('read'), async (re
             signatures: document.signatures,
             createdAt: document.createdAt,
             updatedAt: document.updatedAt,
-            permissions: documentACL.getPermissions(documentId, userId)
+            permissions: userPermissions
         });
     } catch (error) {
         console.error('Get document error:', error);
