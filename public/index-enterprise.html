@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Zero-Trust Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="enterprise.css">
+</head>
+<body>
+    <!-- Login/Register Screen -->
+    <div id="auth-screen" class="screen active">
+        <div class="auth-container">
+            <h1>Enterprise Zero-Trust Workspace</h1>
+            <p class="auth-subtitle">Secure access with continuous verification</p>
+            <div class="auth-tabs">
+                <button class="tab-btn active" onclick="showTab('login')">Login</button>
+                <button class="tab-btn" onclick="showTab('register')">Register</button>
+            </div>
+
+            <!-- Login Tab -->
+            <div id="login-tab" class="tab-content active">
+                <form id="login-form">
+                    <input type="email" id="login-email" placeholder="Email" required>
+                    <input type="password" id="login-password" placeholder="Password" required>
+                    <button type="submit">Login</button>
+                </form>
+                <div id="mfa-verify" style="display:none;">
+                    <h3>Enter MFA Code</h3>
+                    <input type="text" id="mfa-token" placeholder="6-digit code" pattern="[0-9]{6}" required>
+                    <button onclick="verifyMFA()">Verify</button>
+                </div>
+            </div>
+
+            <!-- Register Tab -->
+            <div id="register-tab" class="tab-content">
+                <form id="register-form">
+                    <input type="text" id="reg-username" placeholder="Username" required>
+                    <input type="email" id="reg-email" placeholder="Email" required>
+                    <input type="password" id="reg-password" placeholder="Password" minlength="8" required>
+                    <button type="submit">Register</button>
+                </form>
+                <div id="mfa-setup" style="display:none;">
+                    <h3>Setup MFA</h3>
+                    <div id="qr-code-container"></div>
+                    <p>Scan this QR code with your authenticator app</p>
+                    <input type="text" id="mfa-setup-token" placeholder="Enter code to verify" required>
+                    <button onclick="enableMFA()">Enable MFA</button>
+                </div>
+            </div>
+        </div>
+        <div id="message"></div>
+    </div>
+
+    <!-- Main Application Screen -->
+    <div id="app-screen" class="screen">
+        <!-- Top Navigation Bar -->
+        <nav class="top-nav">
+            <div class="nav-left">
+                <h2>🔒 Zero-Trust Workspace</h2>
+                <select id="org-selector" onchange="switchOrganization()">
+                    <option value="">Select Organization</option>
+                </select>
+                <select id="workspace-selector" onchange="switchWorkspace()">
+                    <option value="">Select Workspace</option>
+                </select>
+            </div>
+            <div class="nav-right">
+                <a href="invite.html" class="icon-btn" title="Invite Users">👥 Invite</a>
+                <div style="position: relative; display: inline-block;">
+                    <button onclick="toggleNotifications()" class="icon-btn">
+                        🔔 <span id="notification-badge" class="badge">0</span>
+                    </button>
+                    <!-- Notifications Dropdown -->
+                    <div id="notifications-dropdown" class="dropdown">
+                        <div class="dropdown-header">
+                            <h4>Notifications</h4>
+                            <button onclick="markAllRead()">Mark all read</button>
+                        </div>
+                        <div id="notifications-list"></div>
+                    </div>
+                </div>
+                <a href="sessions.html" class="icon-btn">🖥️ Sessions</a>
+                <a href="compliance.html" class="icon-btn">📊 Compliance</a>
+                <a href="security-lab.html" class="icon-btn">🛡️ Security Lab</a>
+                <button onclick="toggleTheme()" class="icon-btn" title="Toggle theme">🌓 Theme</button>
+                <span id="user-info"></span>
+                <button onclick="logout()">Logout</button>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <div class="main-container">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h3>Folders</h3>
+                    <button onclick="createFolder()" class="icon-btn">➕</button>
+                </div>
+                <div id="folder-tree" class="folder-tree">
+                    <!-- Folder tree will be loaded here -->
+                </div>
+                
+                <div class="sidebar-section">
+                    <h4>Quick Actions</h4>
+                    <button onclick="showCreateOrgModal()">➕ New Organization</button>
+                    <button onclick="showCreateWorkspaceModal()">➕ New Workspace</button>
+                    <button onclick="showCreateDocModal()">📄 New Document</button>
+                    <button onclick="showTasksModal()">📋 Tasks</button>
+                    <button onclick="showAuditLogsModal()">📝 Audit Logs</button>
+                </div>
+            </aside>
+
+            <!-- Document List/Viewer -->
+            <main class="content-area">
+                <!-- Document List View -->
+                <div id="document-list-view" class="view active">
+                    <div class="view-header">
+                        <h2>Documents</h2>
+                        <div class="view-actions">
+                            <input type="search" id="doc-search" placeholder="Search documents..." oninput="searchDocuments()">
+                            <select id="view-mode" onchange="changeViewMode()">
+                                <option value="list">List View</option>
+                                <option value="grid">Grid View</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="documents-container" class="documents-list">
+                        <!-- Documents will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Document Detail View -->
+                <div id="document-view" class="view">
+                    <div class="document-header">
+                        <button onclick="backToList()" class="icon-btn">← Back</button>
+                        <h2 id="doc-title"></h2>
+                        <div class="document-actions">
+                            <button id="edit-btn" onclick="editDocument()" style="display:none;">✏️ Edit</button>
+                            <button id="sign-btn" onclick="signDocument()" style="display:none;">✍️ Sign</button>
+                            <button id="share-btn" onclick="showShareModal()" style="display:none;">🔗 Share</button>
+                            <button id="download-btn" onclick="downloadDocument()" style="display:none;">⬇️ Download</button>
+                            <button onclick="showVersionHistory()">📜 Versions</button>
+                        </div>
+                    </div>
+                    
+                    <div class="document-content-wrapper">
+                        <!-- Document Content -->
+                        <div class="document-content">
+                            <div id="doc-content" class="content-display"></div>
+                            <textarea id="doc-content-edit" class="content-editor" style="display:none;"></textarea>
+                            <button id="save-btn" onclick="saveDocument()" style="display:none;">💾 Save</button>
+                        </div>
+
+                        <!-- Comments Sidebar -->
+                        <div class="comments-sidebar">
+                            <h3>💬 Comments</h3>
+                            <div id="comments-container"></div>
+                            <div class="comment-input">
+                                <textarea id="new-comment" placeholder="Add a comment..."></textarea>
+                                <button onclick="addComment()">Send</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Document Metadata -->
+                    <div class="document-metadata">
+                        <div class="metadata-section">
+                            <h4>Signatures</h4>
+                            <div id="signatures-list"></div>
+                        </div>
+                        <div class="metadata-section">
+                            <h4>Document Info</h4>
+                            <div id="doc-metadata"></div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-overlay" class="modal-overlay" onclick="closeModals()"></div>
+
+    <!-- Create Organization Modal -->
+    <div id="create-org-modal" class="modal">
+        <div class="modal-header">
+            <h2>➕ Create Organization</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="org-name">Organization Name</label>
+                <input type="text" id="org-name" placeholder="Enter organization name" required>
+            </div>
+            <div class="form-group">
+                <label for="org-description">Description (Optional)</label>
+                <textarea id="org-description" placeholder="Enter organization description" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="org-require-mfa">
+                    <span>Require Multi-Factor Authentication (MFA) for all members</span>
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModals()" class="btn-secondary">Cancel</button>
+            <button onclick="createOrganization()" class="btn-primary">Create Organization</button>
+        </div>
+    </div>
+
+    <!-- Create Workspace Modal -->
+    <div id="create-workspace-modal" class="modal">
+        <div class="modal-header">
+            <h2>➕ Create Workspace</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="workspace-org-select">Organization *</label>
+                <select id="workspace-org-select" required>
+                    <option value="">Select Organization</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="workspace-name">Workspace Name</label>
+                <input type="text" id="workspace-name" placeholder="Enter workspace name" required>
+            </div>
+            <div class="form-group">
+                <label for="workspace-description">Description (Optional)</label>
+                <textarea id="workspace-description" placeholder="Enter workspace description" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="workspace-type">Workspace Type</label>
+                <select id="workspace-type">
+                    <option value="team">Team Collaboration</option>
+                    <option value="project">Project</option>
+                    <option value="department">Department</option>
+                    <option value="personal">Personal</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModals()" class="btn-secondary">Cancel</button>
+            <button onclick="createWorkspace()" class="btn-primary">Create Workspace</button>
+        </div>
+    </div>
+
+    <!-- Create Document Modal -->
+    <div id="create-doc-modal" class="modal">
+        <div class="modal-header">
+            <h2>📄 Create New Document</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Document Type</label>
+                <div class="doc-type-selector">
+                    <label class="doc-type-option active" data-type="text">
+                        <input type="radio" name="doc-type" value="text" checked onchange="switchDocType('text')">
+                        <span class="doc-type-icon">📝</span>
+                        <span class="doc-type-label">Text Document</span>
+                    </label>
+                    <label class="doc-type-option" data-type="upload">
+                        <input type="radio" name="doc-type" value="upload" onchange="switchDocType('upload')">
+                        <span class="doc-type-icon">📎</span>
+                        <span class="doc-type-label">Upload File</span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="new-doc-title">Document Title</label>
+                <input type="text" id="new-doc-title" placeholder="Enter document title" required>
+            </div>
+            
+            <!-- Text Document Fields -->
+            <div id="text-doc-fields" class="doc-fields active">
+                <div class="form-group">
+                    <label for="new-doc-content">Content</label>
+                    <textarea id="new-doc-content" placeholder="Enter document content..." rows="10"></textarea>
+                </div>
+            </div>
+            
+            <!-- Upload Document Fields -->
+            <div id="upload-doc-fields" class="doc-fields" style="display:none;">
+                <div class="form-group">
+                    <label for="doc-file-upload">Choose File</label>
+                    <div class="file-upload-area" id="file-upload-area" onclick="document.getElementById('doc-file-upload').click()">
+                        <input type="file" id="doc-file-upload" accept=".pdf,.ppt,.pptx,.doc,.docx,.txt" hidden onchange="handleFileSelect(event)">
+                        <div class="upload-placeholder" id="upload-placeholder">
+                            <span class="upload-icon">📤</span>
+                            <p>Click to upload or drag and drop</p>
+                            <small>Supported: PDF, PPT, PPTX, DOC, DOCX, TXT (Max 50MB)</small>
+                        </div>
+                        <div class="uploaded-file-info" id="uploaded-file-info" style="display:none;">
+                            <span class="file-icon">📄</span>
+                            <div class="file-details">
+                                <strong id="uploaded-file-name"></strong>
+                                <small id="uploaded-file-size"></small>
+                            </div>
+                            <button type="button" class="remove-file-btn" onclick="event.stopPropagation(); removeUploadedFile()">×</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="new-doc-folder">Location</label>
+                <select id="new-doc-folder">
+                    <option value="">📁 Root Folder</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="new-doc-encrypted" checked>
+                    <span>🔒 Encrypt document (End-to-end encryption)</span>
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModals()" class="btn-secondary">Cancel</button>
+            <button onclick="createDocument()" class="btn-primary" id="create-doc-btn">Create Document</button>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div id="share-modal" class="modal large">
+        <h3>Share Document</h3>
+        <input type="email" id="share-email" placeholder="User email" required>
+        
+        <h4>Permissions</h4>
+        <div class="permissions-grid">
+            <label><input type="checkbox" class="perm-check" value="read" checked> Read</label>
+            <label><input type="checkbox" class="perm-check" value="write"> Write</label>
+            <label><input type="checkbox" class="perm-check" value="comment"> Comment</label>
+            <label><input type="checkbox" class="perm-check" value="share"> Share</label>
+            <label><input type="checkbox" class="perm-check" value="sign"> Sign</label>
+            <label><input type="checkbox" class="perm-check" value="download"> Download</label>
+        </div>
+
+        <h4>Advanced Options</h4>
+        <label>Expires: <input type="datetime-local" id="share-expires"></label>
+        <label><input type="checkbox" id="share-view-only"> View only mode</label>
+        <label><input type="checkbox" id="share-watermark"> Add watermark</label>
+        
+        <div class="modal-actions">
+            <button onclick="shareDocument()">Share</button>
+            <button onclick="closeModals()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Tasks Modal -->
+    <div id="tasks-modal" class="modal large">
+        <div class="modal-header">
+            <h2>📋 Tasks & Approvals</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="view-header">
+                <div class="modal-tabs">
+                    <button class="tab-btn active" onclick="showTaskTab('all')">All Tasks</button>
+                    <button class="tab-btn" onclick="showTaskTab('assigned')">Assigned to Me</button>
+                    <button class="tab-btn" onclick="showTaskTab('create')">+ Create Task</button>
+                </div>
+                <div class="view-actions">
+                    <input type="search" placeholder="Search tasks..." oninput="searchTasks(this.value)">
+                </div>
+            </div>
+            <div id="tasks-container" class="tasks-list">
+                <!-- Tasks loaded dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Audit Logs Modal -->
+    <div id="audit-logs-modal" class="modal large">
+        <div class="modal-header">
+            <h2>📝 Audit Logs</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="view-header">
+                <div class="view-actions">
+                    <select id="audit-action-filter" onchange="filterAuditLogs()">
+                        <option value="">All Actions</option>
+                        <option value="document.create">Document Created</option>
+                        <option value="document.update">Document Updated</option>
+                        <option value="document.delete">Document Deleted</option>
+                        <option value="permission.grant">Permission Granted</option>
+    </div>
+
+    <!-- Invite Modal -->
+    <div id="invite-modal" class="modal">
+        <div class="modal-header">
+            <h2>👥 Invite Users</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="invite-type">Invite To</label>
+                <select id="invite-type" onchange="updateInviteContext()">
+                    <option value="organization">Organization</option>
+                    <option value="workspace">Workspace</option>
+                    <option value="document">Document</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="invite-email">Email Address</label>
+                <input type="email" id="invite-email" placeholder="user@example.com" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="invite-role">Role</label>
+                <select id="invite-role">
+                    <option value="member">Member</option>
+                    <option value="admin">Administrator</option>
+                    <option value="viewer">Viewer</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="invite-workspaces-group" style="display:none;">
+                <label>Select Workspaces (Optional)</label>
+                <div id="invite-workspaces-list" class="checkbox-list">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+            
+            <div class="form-group" id="invite-permissions-group" style="display:none;">
+                <label>Document Permissions</label>
+                <div class="permission-checkboxes">
+                    <label><input type="checkbox" class="invite-perm" value="read" checked> Read</label>
+                    <label><input type="checkbox" class="invite-perm" value="write"> Write</label>
+                    <label><input type="checkbox" class="invite-perm" value="comment"> Comment</label>
+                    <label><input type="checkbox" class="invite-perm" value="share"> Share</label>
+                    <label><input type="checkbox" class="invite-perm" value="sign"> Sign</label>
+                    <label><input type="checkbox" class="invite-perm" value="download"> Download</label>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="invite-message">Personal Message (Optional)</label>
+                <textarea id="invite-message" placeholder="Add a personal note to the invitation..." rows="3"></textarea>
+            </div>
+            
+            <div class="invite-preview" id="invite-preview" style="display:none; margin-top: var(--space-4); padding: var(--space-4); background: var(--bg-tertiary); border-radius: var(--radius-md);">
+                <h4 style="margin-bottom: var(--space-3);">📧 Invitation Preview</h4>
+                <div class="qr-code-container" id="invite-qr" style="text-align: center; margin-bottom: var(--space-3);"></div>
+                <input type="text" id="invite-link" readonly onclick="this.select()" style="width: 100%; margin-bottom: var(--space-2);">
+                <button onclick="copyInviteLink()" class="btn-secondary">📋 Copy Link</button>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModals()" class="btn-secondary">Cancel</button>
+            <button onclick="sendInvite()" class="btn-primary">Send Invitation</button>
+        </div>
+    </div>
+
+    <!-- Audit Logs Modal -->
+    <div id="audit-logs-modal" class="modal large">
+        <div class="modal-header">
+            <h2>📜 Audit Logs</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="filters" style="display: flex; gap: var(--space-3); margin-bottom: var(--space-4);">
+                <select id="audit-action-filter" onchange="filterAuditLogs()">
+                    <option value="">All Actions</option>
+                    <option value="document.create">Document Created</option>
+                    <option value="document.update">Document Updated</option>
+                    <option value="document.delete">Document Deleted</option>
+                    <option value="permission.grant">Permission Granted</option>
+                    <option value="user.login">User Login</option>
+                </select>
+                <input type="date" id="audit-start-date" onchange="filterAuditLogs()">
+                <input type="date" id="audit-end-date" onchange="filterAuditLogs()">
+            </div>
+            <div id="audit-logs-container"></div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="verifyAuditChain()" class="btn-secondary">🔍 Verify Chain</button>
+            <button onclick="closeModals()" class="btn-primary">Close</button>
+        </div>
+    </div>
+
+    <!-- Sessions Modal -->
+    <div id="sessions-modal" class="modal large">
+        <div class="modal-header">
+            <h2>🖥️ Active Sessions</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div id="sessions-container"></div>
+        </div>
+    </div>
+
+    <!-- Compliance Dashboard Modal -->
+    <div id="compliance-modal" class="modal large">
+        <div class="modal-header">
+            <h2>📊 Compliance Dashboard</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="compliance-score">
+                <h2 id="compliance-score">--</h2>
+                <p>Compliance Score</p>
+            </div>
+            <div id="compliance-data"></div>
+        </div>
+    </div>
+
+    <!-- Security Lab Modal -->
+    <div id="security-lab-modal" class="modal large">
+        <div class="modal-header">
+            <h2>🛡️ Security Lab - Attack Simulation</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="lab-controls">
+                <h4>Simulate Attacks</h4>
+                <button onclick="simulateReplayAttack()" class="btn-primary">🔁 Replay Attack</button>
+                <button onclick="simulatePrivilegeEscalation()" class="btn-primary">⬆️ Privilege Escalation</button>
+                <button onclick="simulateTamperedUpload()" class="btn-primary">🔧 Tampered Upload</button>
+            </div>
+            <div id="lab-results"></div>
+        </div>
+    </div>
+
+    <!-- Version History Modal -->
+    <div id="version-history-modal" class="modal large">
+        <div class="modal-header">
+            <h2>📜 Version History</h2>
+            <button class="close-btn" onclick="closeModals()">×</button>
+        </div>
+        <div class="modal-body">
+            <div id="version-history-container"></div>
+            <div id="version-diff-container"></div>
+        </div>
+    </div>
+
+    <!-- Re-Authentication Modal -->
+    <div id="reauth-modal" class="modal small">
+        <div class="modal-header">
+            <h2>🔐 Re-Authentication Required</h2>
+        </div>
+        <div class="modal-body">
+            <p>This action requires re-authentication. Please enter your password.</p>
+            <div class="form-group">
+                <input type="password" id="reauth-password" placeholder="Password" required>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModals()" class="btn-secondary">Cancel</button>
+            <button onclick="submitReAuth()" class="btn-primary">Verify</button>
+        </div>
+    </div>
+
+    <script src="app-enterprise.js"></script>
+    <script src="app-enterprise-part2.js"></script>
+    <script src="app-enterprise-part3.js"></script>
+    <script src="app-enterprise-part4.js"></script>
+</body>
+</html>

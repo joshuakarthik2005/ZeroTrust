@@ -9,6 +9,19 @@ const mongoose = require('mongoose');
 const authRoutes = require('./routes/auth');
 const documentRoutes = require('./routes/documents');
 const inviteRoutes = require('./routes/invites');
+const organizationRoutes = require('./routes/organizations');
+const workspaceRoutes = require('./routes/workspaces');
+const folderRoutes = require('./routes/folders');
+const versionRoutes = require('./routes/versions');
+const sessionRoutes = require('./routes/sessions');
+const auditLogRoutes = require('./routes/auditLogs');
+const commentRoutes = require('./routes/comments');
+const taskRoutes = require('./routes/tasks');
+const notificationRoutes = require('./routes/notifications');
+const complianceRoutes = require('./routes/compliance');
+const apiRoutes = require('./routes/api');
+const securityLabRoutes = require('./routes/securityLab');
+const { initializeAuditLogger } = require('./utils/auditLogger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,6 +46,8 @@ const connectDB = async () => {
         cached.promise = mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/zero-trust-workspace', opts)
             .then((mongoose) => {
                 console.log('✅ Connected to MongoDB');
+                // Initialize audit logger after DB connection
+                initializeAuditLogger().catch(err => console.error('Audit logger init error:', err));
                 return mongoose;
             });
     }
@@ -77,6 +92,18 @@ app.use(express.static('public'));
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/organizations', organizationRoutes);
+app.use('/api/workspaces', workspaceRoutes);
+app.use('/api/folders', folderRoutes);
+app.use('/api/versions', versionRoutes);
+app.use('/api/sessions', sessionRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
+app.use('/api/comments', commentRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/compliance', complianceRoutes);
+app.use('/api/api', apiRoutes);
+app.use('/api/security-lab', securityLabRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/invites', inviteRoutes);
 
@@ -84,6 +111,8 @@ app.use('/api/invites', inviteRoutes);
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+// (Removed SPA enterprise routes and invite page mappings)
 
 // Error handling middleware
 app.use((err, req, res, next) => {

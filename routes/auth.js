@@ -6,6 +6,9 @@ const QRCode = require('qrcode');
 const EncryptionService = require('../utils/encryption');
 const { User } = require('../models');
 const { authenticateToken } = require('../middleware/auth');
+const { createSession } = require('./sessions');
+const { createAuditLog } = require('../utils/auditLogger');
+const { createNotification } = require('../utils/notificationService');
 
 const router = express.Router();
 
@@ -178,8 +181,20 @@ router.post('/verify-mfa', async (req, res) => {
             token: cleanToken,
             window: 4 // ±2 minutes tolerance
         });
-
+        
         if (!verified) {
+            await createAuditLog({
+                action: 'user.mfa.failed',
+                userId: user._id,
+                resourceType: 'user',
+                resourceId: user._id,
+                userEmail: user.email,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+                severity: 'medium',
+                result: 'blocked'
+            });
+            
             return res.status(401).json({ error: 'Invalid MFA token. Please try the current code.' });
         }
 
@@ -193,6 +208,27 @@ router.post('/verify-mfa', async (req, res) => {
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
+
+        // Create device session for tracking and security
+        try {
+            await createSession(user._id, req, jwtToken);
+        } catch (sessionError) {
+            console.error('Session creation error:', sessionError);
+            // Don't fail login if session creation fails
+        }
+        
+        // Create audit log for successful login
+        await createAuditLog({
+            action: 'user.login',
+            userId: user._id,
+            userEmail: user.email,
+            userRole: user.role,
+            resourceType: 'user',
+            resourceId: user._id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+            result: 'success'
+        });
 
         // Store session (only if session exists - may not in serverless)
         if (req.session) {

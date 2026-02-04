@@ -1,9 +1,198 @@
 const express = require('express');
-const { authenticateToken, checkDocumentPermission, documentACL } = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+const crypto = require('crypto');
+const fs = require('fs').promises;
+const { authenticateToken, checkDocumentPermission, documentACL, requireReAuth, checkSensitiveAction } = require('../middleware/auth');
 const EncryptionService = require('../utils/encryption');
 const { User, Document } = require('../models');
+const { createVersion } = require('./versions');
+const { createAuditLog } = require('../utils/auditLogger');
 
 const router = express.Router();
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + crypto.randomBytes(6).toString('hex');
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = [
+            'application/pdf',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain'
+        ];
+        
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type. Only PDF, PPT, PPTX, DOC, DOCX, and TXT are allowed.'));
+        }
+    }
+});
+
+/**
+ * Upload a file as a document
+ * POST /api/documents/upload
+ */
+router.post('/upload', authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        
+        const { title, encrypted, folderId, organizationId, workspaceId } = req.body;
+        const userId = req.user.userId;
+        
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Use provided org/workspace or fall back to user's current
+        const docOrganizationId = organizationId || user.currentOrganizationId || null;
+        const docWorkspaceId = workspaceId || user.currentWorkspaceId || null;
+        
+        // Determine file type
+        const ext = path.extname(req.file.originalname).toLowerCase();
+        const fileTypeMap = {
+            '.pdf': 'pdf',
+            '.ppt': 'ppt',
+            '.pptx': 'pptx',
+            '.doc': 'doc',
+            '.docx': 'docx',
+            '.txt': 'text'
+        };
+        const fileType = fileTypeMap[ext] || 'uploaded';
+        
+        // Read file content for hash
+        const fileBuffer = await fs.readFile(req.file.path);
+        const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+        
+        // Create document
+        const document = new Document({
+            title: title || req.file.originalname,
+            content: `File uploaded: ${req.file.originalname}`,
+            ownerId: userId,
+            workspaceId: docWorkspaceId,
+            organizationId: docOrganizationId,
+            fileType: fileType,
+            filePath: req.file.path,
+            fileName: req.file.originalname,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            encrypted: encrypted === 'true' || encrypted === true,
+            hash: hash,
+            folderId: folderId || null
+        });
+        
+        await document.save();
+        
+        // Audit log
+        await createAuditLog({
+            action: 'document.create',
+            userId: userId,
+            userEmail: user.email,
+            resourceType: 'document',
+            resourceId: document._id,
+            resourceName: document.title,
+            metadata: { fileType, fileSize: req.file.size },
+            result: 'success'
+        });
+        
+        res.status(201).json({
+            message: 'File uploaded successfully',
+            document: {
+                _id: document._id,
+                title: document.title,
+                fileType: document.fileType,
+                fileName: document.fileName,
+                fileSize: document.fileSize
+            }
+        });
+    } catch (error) {
+        console.error('File upload error:', error);
+        // Clean up uploaded file if document creation failed
+        if (req.file) {
+            try {
+                await fs.unlink(req.file.path);
+            } catch (unlinkError) {
+                console.error('Error cleaning up file:', unlinkError);
+            }
+        }
+        res.status(500).json({ error: 'File upload failed: ' + error.message });
+    }
+});
+
+/**
+ * Download/view uploaded file
+ * GET /api/documents/:id/file
+ */
+router.get('/:id/file', authenticateToken, async (req, res) => {
+    try {
+        const document = await Document.findById(req.params.id);
+        
+        if (!document) {
+            return res.status(404).json({ error: 'Document not found' });
+        }
+        
+        if (!document.filePath) {
+            return res.status(400).json({ error: 'This document is not a file' });
+        }
+        
+        // Check permissions
+        const userId = req.user.userId;
+        const isOwner = document.ownerId.toString() === userId;
+        const hasPermission = document.permissions.some(p => p.userId.toString() === userId && 
+                             (p.permissions.includes('download') || p.permissions.includes('read')));
+        
+        if (!isOwner && !hasPermission) {
+            return res.status(403).json({ error: 'Permission denied' });
+        }
+        
+        // Check if file exists
+        const filePath = path.resolve(document.filePath);
+        console.log('Attempting to serve file:', filePath);
+        console.log('File exists check...');
+        
+        const fsSync = require('fs');
+        if (!fsSync.existsSync(filePath)) {
+            console.error('File not found on disk:', filePath);
+            return res.status(404).json({ error: 'File not found on server' });
+        }
+        
+        console.log('File exists, sending...');
+        
+        // Send file
+        res.setHeader('Content-Type', document.mimeType || 'application/octet-stream');
+        res.setHeader('Content-Disposition', `inline; filename="${document.fileName}"`);
+        res.sendFile(filePath, (err) => {
+            if (err) {
+                console.error('Error sending file:', err);
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Failed to send file' });
+                }
+            } else {
+                console.log('File sent successfully');
+            }
+        });
+    } catch (error) {
+        console.error('File download error:', error);
+        res.status(500).json({ error: 'File download failed' });
+    }
+});
 
 /**
  * Create a new document
@@ -11,8 +200,13 @@ const router = express.Router();
  */
 router.post('/', authenticateToken, async (req, res) => {
     try {
-        const { title, content, encrypted, sharedWith } = req.body;
+        const { title, content, encrypted, sharedWith, folderId } = req.body;
         const userId = req.user.userId;
+        
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
 
         let storedContent = content;
         let encryptedKeys = {};
@@ -45,15 +239,28 @@ router.post('/', authenticateToken, async (req, res) => {
             title,
             content: storedContent,
             ownerId: userId,
+            workspaceId: user.currentWorkspaceId || null,
+            organizationId: user.currentOrganizationId || null,
+            folderId: folderId || null,
             encrypted,
             encryptedKeys,
             hash: EncryptionService.hash(content),
             signed: false,
             signatures: [],
-            permissions: []
+            permissions: [],
+            currentVersion: 1,
+            size: Buffer.byteLength(content, 'utf8')
         });
 
         await document.save();
+        
+        // Create initial version
+        try {
+            await createVersion(document._id, userId, 'Initial version');
+        } catch (versionError) {
+            console.error('Version creation error:', versionError);
+            // Don't fail document creation if versioning fails
+        }
 
         // Grant owner all permissions
         documentACL.grant(document._id.toString(), userId, ['read', 'write', 'delete', 'sign', 'share']);
@@ -64,6 +271,20 @@ router.post('/', authenticateToken, async (req, res) => {
                 documentACL.grant(document._id.toString(), shareUserId, ['read']);
             }
         }
+        
+        await createAuditLog({
+            action: 'document.create',
+            userId,
+            workspaceId: user.currentWorkspaceId,
+            organizationId: user.currentOrganizationId,
+            resourceType: 'document',
+            resourceId: document._id,
+            resourceName: title,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+            metadata: { encrypted, folderId },
+            result: 'success'
+        });
 
         res.status(201).json({
             message: 'Document created successfully',
@@ -88,8 +309,18 @@ router.post('/', authenticateToken, async (req, res) => {
 router.get('/', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.userId;
+        const { organizationId, workspaceId } = req.query;
         
-        const allDocuments = await Document.find({});
+        // Build filter for documents
+        let filter = {};
+        if (organizationId) {
+            filter.organizationId = organizationId;
+        }
+        if (workspaceId) {
+            filter.workspaceId = workspaceId;
+        }
+        
+        const allDocuments = await Document.find(filter);
         const accessibleDocs = [];
 
         console.log(`User ${userId} requesting documents. Total documents: ${allDocuments.length}`);
@@ -119,7 +350,10 @@ router.get('/', authenticateToken, async (req, res) => {
                     createdAt: doc.createdAt,
                     updatedAt: doc.updatedAt,
                     permissions: userPerms,
-                    isShared: !isOwner
+                    isShared: !isOwner,
+                    fileType: doc.fileType,
+                    fileName: doc.fileName,
+                    hasFile: !!doc.filePath
                 });
             }
         }
@@ -140,16 +374,22 @@ router.get('/:id', authenticateToken, checkDocumentPermission('read'), async (re
     try {
         const documentId = req.params.id;
         const userId = req.user.userId;
+        
+        console.log('Fetching document:', documentId, 'for user:', userId);
+        
         const document = await Document.findById(documentId);
 
         if (!document) {
+            console.log('Document not found in database:', documentId);
             return res.status(404).json({ error: 'Document not found' });
         }
+        
+        console.log('Document found:', document.title, 'owner:', document.ownerId);
 
         let content = document.content;
 
         // Decrypt if encrypted
-        if (document.encrypted) {
+        if (document.encrypted && document.encryptedKeys) {
             const user = await User.findById(userId);
             if (!user) {
                 return res.status(404).json({ error: 'User not found' });
@@ -183,17 +423,24 @@ router.get('/:id', authenticateToken, checkDocumentPermission('read'), async (re
             title: document.title,
             content,
             ownerId: document.ownerId.toString(),
-            encrypted: document.encrypted,
-            hash: document.hash,
-            signed: document.signed,
-            signatures: document.signatures,
+            encrypted: document.encrypted || false,
+            hash: document.hash || '',
+            signed: document.signed || false,
+            signatures: document.signatures || [],
             createdAt: document.createdAt,
             updatedAt: document.updatedAt,
-            permissions: userPermissions
+            permissions: userPermissions,
+            fileType: document.fileType || null,
+            fileName: document.fileName || null,
+            filePath: document.filePath || null,
+            fileSize: document.fileSize || 0,
+            mimeType: document.mimeType || null,
+            hasFile: !!document.filePath,
+            currentVersion: document.currentVersion || 1
         });
     } catch (error) {
         console.error('Get document error:', error);
-        res.status(500).json({ error: 'Failed to retrieve document' });
+        res.status(500).json({ error: 'Failed to retrieve document: ' + error.message });
     }
 });
 
@@ -205,6 +452,7 @@ router.put('/:id', authenticateToken, checkDocumentPermission('write'), async (r
     try {
         const documentId = req.params.id;
         const { title, content } = req.body;
+        const userId = req.user.userId;
         const document = await Document.findById(documentId);
 
         if (!document) {
@@ -233,12 +481,39 @@ router.put('/:id', authenticateToken, checkDocumentPermission('write'), async (r
                 document.content = content;
             }
             document.hash = EncryptionService.hash(content);
-            document.signed = false; // Invalidate signatures on update
-            document.signatures = [];
+            
+            // Invalidate all signatures on update
+            document.signed = false;
+            if (document.signatures && document.signatures.length > 0) {
+                document.signatures.forEach(sig => {
+                    sig.invalidated = true;
+                    sig.invalidatedAt = new Date();
+                });
+            }
         }
 
         document.updatedAt = new Date();
         await document.save();
+        
+        // Create new version
+        try {
+            await createVersion(documentId, userId, 'Document updated');
+        } catch (versionError) {
+            console.error('Version creation error:', versionError);
+        }
+        
+        await createAuditLog({
+            action: 'document.update',
+            userId,
+            workspaceId: document.workspaceId,
+            organizationId: document.organizationId,
+            resourceType: 'document',
+            resourceId: documentId,
+            resourceName: document.title,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+            result: 'success'
+        });
 
         res.json({ message: 'Document updated successfully' });
     } catch (error) {
@@ -251,9 +526,30 @@ router.put('/:id', authenticateToken, checkDocumentPermission('write'), async (r
  * Delete document
  * DELETE /api/documents/:id
  */
-router.delete('/:id', authenticateToken, checkDocumentPermission('delete'), async (req, res) => {
+router.delete('/:id', authenticateToken, requireReAuth('delete'), checkDocumentPermission('delete'), async (req, res) => {
     try {
         const documentId = req.params.id;
+        const userId = req.user.userId;
+        const document = await Document.findById(documentId);
+        
+        if (!document) {
+            return res.status(404).json({ error: 'Document not found' });
+        }
+        
+        await createAuditLog({
+            action: 'document.delete',
+            userId,
+            workspaceId: document.workspaceId,
+            organizationId: document.organizationId,
+            resourceType: 'document',
+            resourceId: documentId,
+            resourceName: document.title,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+            severity: 'high',
+            result: 'success'
+        });
+        
         await Document.findByIdAndDelete(documentId);
 
         res.json({ message: 'Document deleted successfully' });
@@ -267,7 +563,7 @@ router.delete('/:id', authenticateToken, checkDocumentPermission('delete'), asyn
  * Sign document with digital signature
  * POST /api/documents/:id/sign
  */
-router.post('/:id/sign', authenticateToken, checkDocumentPermission('sign'), async (req, res) => {
+router.post('/:id/sign', authenticateToken, requireReAuth('sign'), checkDocumentPermission('sign'), async (req, res) => {
     try {
         const documentId = req.params.id;
         const userId = req.user.userId;
@@ -291,7 +587,8 @@ router.post('/:id/sign', authenticateToken, checkDocumentPermission('sign'), asy
             username: user.username,
             signature,
             timestamp: new Date(),
-            documentHash: document.hash
+            documentHash: document.hash,
+            invalidated: false
         };
 
         document.signatures.push(signatureObj);
@@ -362,40 +659,66 @@ router.get('/:id/verify', authenticateToken, checkDocumentPermission('read'), as
  * Share document with another user
  * POST /api/documents/:id/share
  */
-router.post('/:id/share', authenticateToken, checkDocumentPermission('share'), async (req, res) => {
+router.post('/:id/share', authenticateToken, requireReAuth('share'), checkDocumentPermission('share'), async (req, res) => {
     try {
         const documentId = req.params.id;
-        const { userId: targetUserId, permissions } = req.body;
+        const { userId: targetUserId, email, permissions } = req.body;
+        const currentUserId = req.user.userId;
         const document = await Document.findById(documentId);
 
         if (!document) {
             return res.status(404).json({ error: 'Document not found' });
         }
 
-        const targetUser = await User.findById(targetUserId);
+        // Find target user by userId or email
+        let targetUser;
+        if (targetUserId) {
+            targetUser = await User.findById(targetUserId);
+        } else if (email) {
+            targetUser = await User.findOne({ email });
+        }
+        
         if (!targetUser) {
             return res.status(404).json({ error: 'Target user not found' });
         }
+        
+        const finalTargetUserId = targetUser._id.toString();
 
-        // Grant permissions
-        const validPermissions = ['read', 'write', 'sign'];
+        // Grant permissions (updated list)
+        const validPermissions = ['read', 'write', 'comment', 'share', 'delete', 'sign', 'download'];
         const permissionsToGrant = permissions.filter(p => validPermissions.includes(p));
-        documentACL.grant(documentId, targetUserId, permissionsToGrant);
+        documentACL.grant(documentId, finalTargetUserId, permissionsToGrant);
+        
+        // Add to MongoDB permissions array for persistence
+        const existingPermission = document.permissions.find(p => p.userId.toString() === finalTargetUserId);
+        if (existingPermission) {
+            existingPermission.permissions = [...new Set([...existingPermission.permissions, ...permissionsToGrant])];
+        } else {
+            document.permissions.push({
+                userId: finalTargetUserId,
+                permissions: permissionsToGrant,
+                grantedBy: currentUserId,
+                grantedAt: new Date()
+            });
+        }
 
         // If document is encrypted, encrypt for the new user
-        if (document.encrypted) {
-            const userId = req.user.userId;
-            const owner = await User.findById(userId);
+        if (document.encrypted && document.encryptedKeys) {
+            const owner = await User.findById(currentUserId);
             
             // Decrypt content using owner's private key
-            const ownerPackage = document.encryptedKeys.get(userId);
-            const decryptedContent = EncryptionService.decryptData(ownerPackage, owner.privateKey);
+            const ownerPackage = document.encryptedKeys.get(currentUserId);
+            if (ownerPackage) {
+                const decryptedContent = EncryptionService.decryptData(ownerPackage, owner.privateKey);
 
-            // Encrypt for target user
-            const targetPackage = EncryptionService.encryptData(decryptedContent, targetUser.publicKey);
-            document.encryptedKeys.set(targetUserId, targetPackage);
-            await document.save();
+                // Encrypt for target user
+                const targetPackage = EncryptionService.encryptData(decryptedContent, targetUser.publicKey);
+                document.encryptedKeys.set(finalTargetUserId, targetPackage);
+            }
         }
+        
+        // Save document to persist permissions
+        await document.save();
 
         res.json({
             message: 'Document shared successfully',

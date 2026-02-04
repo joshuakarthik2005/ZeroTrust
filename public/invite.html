@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invite Users - Zero-Trust Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="enterprise.css">
+    <style>
+        .page-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+        .page-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .back-btn:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--primary);
+        }
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .card {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+        .invite-link-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+        .invite-link-box {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .invite-link-box input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+        .btn-secondary {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 12px 24px;
+            border-radius: var(--radius-md);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-secondary:hover {
+            background: var(--bg-tertiary);
+        }
+        .message {
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            margin-bottom: 20px;
+            display: none;
+        }
+        .message.success {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid var(--success);
+            color: var(--success);
+            display: block;
+        }
+        .message.error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-container">
+        <div class="page-header">
+            <a href="index-enterprise.html" class="back-btn">← Back to Dashboard</a>
+            <h1 class="page-title">👥 Invite Users</h1>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="card">
+            <div class="form-group">
+                <label>Invite To</label>
+                <select id="invite-type" onchange="updateInviteContext()">
+                    <option value="organization">Organization</option>
+                    <option value="workspace">Workspace</option>
+                    <option value="document">Document</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Organization</label>
+                <select id="invite-org"></select>
+            </div>
+
+            <div class="form-group" id="workspace-group" style="display:none;">
+                <label>Workspace</label>
+                <select id="invite-workspace"></select>
+            </div>
+
+            <div class="form-group" id="document-group" style="display:none;">
+                <label>Document</label>
+                <select id="invite-document">
+                    <option value="">Select a document</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" id="invite-email" placeholder="user@example.com">
+            </div>
+
+            <div class="form-group">
+                <label>Role</label>
+                <select id="invite-role">
+                    <option value="viewer">Viewer</option>
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="permissions-group" style="display:none;">
+                <label>Permissions</label>
+                <select id="invite-permissions">
+                    <option value="read">Read Only</option>
+                    <option value="write">Read & Write</option>
+                    <option value="admin">Full Access</option>
+                </select>
+            </div>
+
+            <button class="btn-primary" onclick="sendInvite()">Send Invitation</button>
+
+            <div class="invite-link-section">
+                <label>Or share invite link:</label>
+                <div class="invite-link-box">
+                    <input type="text" id="invite-link" readonly>
+                    <button class="btn-secondary" onclick="copyLink()">Copy</button>
+                    <button class="btn-secondary" onclick="generateLink()">Generate</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        let authToken = localStorage.getItem('authToken');
+
+        if (!authToken) {
+            window.location.href = 'index-enterprise.html';
+        }
+
+        // Apply theme
+        const theme = localStorage.getItem('enterpriseTheme');
+        if (theme === 'dark') document.body.classList.add('theme-dark');
+
+        async function loadOrganizations() {
+            try {
+                const res = await fetch(`${API_BASE}/organizations`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const orgs = await res.json();
+                const select = document.getElementById('invite-org');
+                select.innerHTML = orgs.map(o => `<option value="${o._id}">${o.name}</option>`).join('');
+                if (orgs.length > 0) loadWorkspaces(orgs[0]._id);
+            } catch (e) {
+                console.error('Failed to load organizations:', e);
+            }
+        }
+
+        async function loadWorkspaces(orgId) {
+            try {
+                const res = await fetch(`${API_BASE}/workspaces?organization=${orgId}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const workspaces = await res.json();
+                const select = document.getElementById('invite-workspace');
+                select.innerHTML = workspaces.map(w => `<option value="${w._id}">${w.name}</option>`).join('');
+                if (workspaces.length > 0) loadDocuments(orgId, workspaces[0]._id);
+            } catch (e) {
+                console.error('Failed to load workspaces:', e);
+            }
+        }
+
+        async function loadDocuments(orgId, workspaceId) {
+            try {
+                const params = new URLSearchParams();
+                if (orgId) params.append('organizationId', orgId);
+                if (workspaceId) params.append('workspaceId', workspaceId);
+                
+                const res = await fetch(`${API_BASE}/documents?${params.toString()}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await res.json();
+                const documents = Array.isArray(data) ? data : (data.documents || []);
+                const select = document.getElementById('invite-document');
+                select.innerHTML = '<option value="">Select a document</option>' + 
+                    documents.map(d => `<option value="${d.id}">${d.title}</option>`).join('');
+            } catch (e) {
+                console.error('Failed to load documents:', e);
+            }
+        }
+
+        document.getElementById('invite-org').addEventListener('change', (e) => {
+            loadWorkspaces(e.target.value);
+        });
+
+        document.getElementById('invite-workspace').addEventListener('change', (e) => {
+            const orgId = document.getElementById('invite-org').value;
+            loadDocuments(orgId, e.target.value);
+        });
+
+        function updateInviteContext() {
+            const type = document.getElementById('invite-type').value;
+            document.getElementById('workspace-group').style.display = 
+                (type === 'workspace' || type === 'document') ? 'block' : 'none';
+            document.getElementById('document-group').style.display = 
+                type === 'document' ? 'block' : 'none';
+            document.getElementById('permissions-group').style.display = 
+                type === 'document' ? 'block' : 'none';
+        }
+
+        async function sendInvite() {
+            const type = document.getElementById('invite-type').value;
+            const email = document.getElementById('invite-email').value;
+            const role = document.getElementById('invite-role').value;
+            const orgId = document.getElementById('invite-org').value;
+            const workspaceId = document.getElementById('invite-workspace').value;
+            const documentId = document.getElementById('invite-document').value;
+
+            if (!email) {
+                showMessage('Please enter an email address', 'error');
+                return;
+            }
+
+            try {
+                let endpoint, body;
+                if (type === 'organization') {
+                    endpoint = `${API_BASE}/organizations/${orgId}/invite`;
+                    body = { email, role };
+                } else if (type === 'workspace') {
+                    endpoint = `${API_BASE}/workspaces/${workspaceId}/invite`;
+                    body = { email, role };
+                } else if (type === 'document') {
+                    if (!documentId) {
+                        showMessage('Please select a document', 'error');
+                        return;
+                    }
+                    const permissions = document.getElementById('invite-permissions').value;
+                    const permArray = permissions === 'read' ? ['read'] : 
+                                     permissions === 'write' ? ['read', 'write'] : 
+                                     ['read', 'write', 'delete', 'share', 'sign'];
+                    endpoint = `${API_BASE}/documents/${documentId}/share`;
+                    body = { email, permissions: permArray };
+                }
+
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                if (res.ok) {
+                    showMessage('Invitation sent successfully!', 'success');
+                    document.getElementById('invite-email').value = '';
+                } else {
+                    const data = await res.json();
+                    showMessage(data.message || 'Failed to send invite', 'error');
+                }
+            } catch (e) {
+                showMessage('Failed to send invitation', 'error');
+            }
+        }
+
+        function generateLink() {
+            const orgId = document.getElementById('invite-org').value;
+            const role = document.getElementById('invite-role').value;
+            const link = `${window.location.origin}/join?org=${orgId}&role=${role}&token=${Date.now()}`;
+            document.getElementById('invite-link').value = link;
+        }
+
+        function copyLink() {
+            const input = document.getElementById('invite-link');
+            input.select();
+            document.execCommand('copy');
+            showMessage('Link copied to clipboard!', 'success');
+        }
+
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = 'message ' + type;
+            setTimeout(() => msg.className = 'message', 3000);
+        }
+
+        loadOrganizations();
+    </script>
+</body>
+</html>
