@@ -109,7 +109,7 @@ app.use('/api/invites', inviteRoutes);
 
 // Serve main page
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'public', 'index-enterprise.html'));
 });
 
 // (Removed SPA enterprise routes and invite page mappings)
